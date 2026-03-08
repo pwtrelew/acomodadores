@@ -7,8 +7,8 @@
     
     <!-- Bibliotecas estables -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -75,7 +75,10 @@
             ];
 
             const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
+            
+            // Usuarios con restricción de "1 vez por mes"
             const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
+            
             const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
             
             // Reglas de visibilidad base (Auditorio nunca admite Atilio, Ramón Perales ni José)
@@ -226,7 +229,8 @@
                                 </thead>
                                 <tbody>
                                     {currentMonthDays.map((day) => {
-                                        const accentColor = day.isThursday ? "#000000" : "#5856D6";
+                                        // Acento: Negro para Jueves, Azul para Sábados
+                                        const accentColor = day.isThursday ? "#000000" : "#007AFF";
                                         
                                         // Filtro Jueves: Quitar Luis de ambas columnas
                                         const auditorioOptions = day.isThursday 
@@ -238,7 +242,7 @@
                                             : allNames;
 
                                         return (
-                                            <tr key={day.fullDate}>
+                                            <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E5F1FF]" : ""}>
                                                 <td className="py-0.5 pr-1">
                                                     <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[22px] bg-gray-50/50 border border-gray-100/50">
                                                         <span className="text-[8px] font-black tracking-tighter mb-0.5" style={{ color: accentColor }}>{day.short}</span>
