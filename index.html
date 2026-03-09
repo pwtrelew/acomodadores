@@ -18,7 +18,7 @@
         :root {
             --system-gray-6: #F2F2F7;
             --system-blue: #007AFF;
-            --system-indigo: #5856D6;
+            --system-teal: #00897B;
             --system-black: #000000;
         }
 
@@ -100,14 +100,14 @@
 
             const currentMonthDays = useMemo(() => {
                 const days = [];
-                const date = new Date(2025, currentMonthIndex, 1);
+                const date = new Date(2026, currentMonthIndex, 1);
                 while (date.getMonth() === currentMonthIndex) {
                     const dayOfWeek = date.getDay(); 
                     if (dayOfWeek === 4 || dayOfWeek === 6) {
                         days.push({
                             dayNum: date.getDate(),
                             short: dayOfWeek === 4 ? "JUE" : "SÁB",
-                            fullDate: `2025-${currentMonthIndex + 1}-${date.getDate()}`,
+                            fullDate: `2026-${currentMonthIndex + 1}-${date.getDate()}`,
                             isThursday: dayOfWeek === 4
                         });
                     }
@@ -145,9 +145,9 @@
                 if (aud === "José" || ent === "José") {
                     const checkMonthForUser = (mIdx, user) => {
                         if (mIdx < 0 || mIdx > 11) return false;
-                        const date = new Date(2025, mIdx, 1);
+                        const date = new Date(2026, mIdx, 1);
                         while (date.getMonth() === mIdx) {
-                            const k = `2025-${mIdx+1}-${date.getDate()}`;
+                            const k = `2026-${mIdx+1}-${date.getDate()}`;
                             if (updated[k]?.auditorio === user || updated[k]?.entrada === user) return true;
                             date.setDate(date.getDate() + 1);
                         }
@@ -189,13 +189,13 @@
                     )}
 
                     <header className="mb-5 flex flex-col gap-1">
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2025</p>
+                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
                         <h1 className="text-3xl font-black tracking-tighter text-black pl-1">Acomodadores</h1>
                     </header>
 
                     {/* Navegador Mes (Estilo Segmented Control) */}
                     <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
-                        <button onClick={() => setCurrentMonthIndex(v => Math.max(2, v-1))} disabled={currentMonthIndex <= 2} className="p-2 disabled:opacity-10 text-gray-600"><i data-lucide="chevron-left" className="w-5 h-5"></i></button>
+                        <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} disabled={currentMonthIndex <= 0} className="p-2 disabled:opacity-10 text-gray-600"><i data-lucide="chevron-left" className="w-5 h-5"></i></button>
                         <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
                         <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} disabled={currentMonthIndex >= 11} className="p-2 text-gray-600"><i data-lucide="chevron-right" className="w-5 h-5"></i></button>
                     </div>
@@ -229,8 +229,8 @@
                                 </thead>
                                 <tbody>
                                     {currentMonthDays.map((day) => {
-                                        // Acento: Negro para Jueves, Azul para Sábados
-                                        const accentColor = day.isThursday ? "#000000" : "#007AFF";
+                                        // Acento: Negro para Jueves, Verde Agua para Sábados
+                                        const accentColor = day.isThursday ? "#000000" : "#00897B";
                                         
                                         // Filtro Jueves: Quitar Luis de ambas columnas
                                         const auditorioOptions = day.isThursday 
@@ -242,8 +242,8 @@
                                             : allNames;
 
                                         return (
-                                            <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E5F1FF]" : ""}>
-                                                <td className="py-0.5 pr-1">
+                                            <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E0F2F1]" : ""}>
+                                                <td className={`py-0.5 pr-1 ${!day.isThursday ? "rounded-l-[22px]" : ""}`}>
                                                     <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[22px] bg-gray-50/50 border border-gray-100/50">
                                                         <span className="text-[8px] font-black tracking-tighter mb-0.5" style={{ color: accentColor }}>{day.short}</span>
                                                         <span className="text-2xl font-black leading-none tracking-tighter" style={{ color: accentColor }}>{day.dayNum}</span>
@@ -259,7 +259,7 @@
                                                         {auditorioOptions.map(n => <option key={n} value={n}>{n}</option>)}
                                                     </select>
                                                 </td>
-                                                <td className="py-0.5 px-0.5">
+                                                <td className={`py-0.5 px-0.5 ${!day.isThursday ? "rounded-r-[22px]" : ""}`}>
                                                     <select 
                                                         value={schedules[day.fullDate]?.entrada || ''} 
                                                         onChange={(e) => handleSelect(day.fullDate, 'entrada', e.target.value)} 
