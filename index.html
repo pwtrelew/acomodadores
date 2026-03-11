@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Acomodadores 2026</title>
     
-    <!-- Cargamos las herramientas necesarias -->
+    <!-- Scripts base -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -19,7 +19,7 @@
             --ios-bg: #F2F2F7;
             --ios-blue: #007AFF;
             --ios-teal: #00897B;
-            --ios-teal-bg: #E0F2F1;
+            --ios-teal-light: #E0F2F1;
         }
 
         body { 
@@ -29,6 +29,7 @@
             padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
             -webkit-font-smoothing: antialiased;
             overflow-x: hidden;
+            user-select: none;
         }
 
         .ios-card {
@@ -46,23 +47,37 @@
             background-size: 10px;
         }
 
-        @keyframes reveal {
+        @keyframes ios-reveal {
             from { opacity: 0; transform: scale(0.98) translateY(10px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
-        .animate-ios { animation: reveal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .animate-ios { animation: ios-reveal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
         .loader-overlay {
             position: fixed; inset: 0; z-index: 500;
-            background: rgba(255,255,255,0.7); backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.8); backdrop-filter: blur(12px);
             display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Estilo para los mensajes de éxito */
+        .toast-msg {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); color: white; padding: 12px 24px;
+            border-radius: 24px; font-size: 13px; font-weight: 600; z-index: 1000;
+            animation: toast-fade 3s forwards;
+        }
+        @keyframes toast-fade {
+            0% { opacity: 0; transform: translate(-50%, 20px); }
+            15% { opacity: 1; transform: translate(-50%, 0); }
+            85% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -10px); }
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- CONFIGURACIÓN DE FIREBASE (Uso de etiqueta Script) -->
+    <!-- FIREBASE MODULE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -82,11 +97,14 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // Pasamos las herramientas a la ventana global para que React las use
+        // Pasamos Firebase al ámbito global para React
         window.fb = { db, auth, doc, setDoc, getDoc, signInAnonymously, onAuthStateChanged };
+        
+        // Disparamos un evento para que React sepa que Firebase está listo
+        window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
-    <!-- LÓGICA DE LA APLICACIÓN (React + Babel) -->
+    <!-- REACT APP -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
@@ -96,53 +114,72 @@
             const [user, setUser] = useState(null);
             const [syncing, setSyncing] = useState(true);
             const [activeWarning, setActiveWarning] = useState(null);
+            const [toast, setToast] = useState(null);
 
             const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
             const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
             const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
             const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
             
-            // Atilio, Ramón Perales y José no aparecen en Auditorio
             const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
 
-            // Sincronización con Firebase
+            // Sincronización Firebase
             useEffect(() => {
-                const initFirebase = async () => {
+                const initSync = async () => {
                     if (!window.fb) return;
                     try {
                         const { auth, signInAnonymously, onAuthStateChanged } = window.fb;
+                        // Intentamos iniciar sesión
                         await signInAnonymously(auth);
                         onAuthStateChanged(auth, (u) => {
                             setUser(u);
-                            if (u) loadMonthFromCloud(currentMonthIndex);
+                            if (u) loadFromCloud(currentMonthIndex);
                         });
                     } catch (e) {
                         console.error("Error Auth:", e);
+                        // Manejo específico del error de configuración de Auth
+                        if (e.code === 'auth/configuration-not-found' || e.message.includes('auth/configuration-not-found')) {
+                            setActiveWarning([
+                                "Error de Configuración:",
+                                "Debes activar el 'Inicio de sesión anónimo' en tu consola de Firebase.",
+                                "Ve a Authentication > Sign-in method > Añadir nuevo proveedor > Anónimo > Habilitar."
+                            ]);
+                        } else {
+                            setActiveWarning(["Error al conectar con el servidor de autenticación."]);
+                        }
                         setSyncing(false);
                     }
                 };
-                initFirebase();
+
+                if (window.fb) {
+                    initSync();
+                } else {
+                    window.addEventListener('firebase-ready', initSync);
+                }
+                return () => window.removeEventListener('firebase-ready', initSync);
             }, [currentMonthIndex]);
 
-            const loadMonthFromCloud = async (mIdx) => {
+            const loadFromCloud = async (mIdx) => {
                 setSyncing(true);
                 const { db, getDoc, doc } = window.fb;
                 const docId = `${months[mIdx]}_2026`;
                 try {
-                    // Ruta estricta de seguridad
                     const docRef = doc(db, 'artifacts', 'acomodadores-df8a5', 'public', 'data', 'calendarios', docId);
                     const snap = await getDoc(docRef);
                     if (snap.exists()) {
                         setSchedules(prev => ({ ...prev, ...snap.data().schedules }));
                     }
                 } catch (e) {
-                    console.error("Error Firestore:", e);
+                    console.error("Load error:", e);
                 }
                 setSyncing(false);
             };
 
-            const saveMonthToCloud = async () => {
-                if (!user) return;
+            const saveToCloud = async () => {
+                if (!user) {
+                    setActiveWarning(["No se puede guardar: El inicio de sesión no se ha completado."]);
+                    return;
+                }
                 setSyncing(true);
                 const { db, setDoc, doc } = window.fb;
                 const docId = `${months[currentMonthIndex]}_2026`;
@@ -153,9 +190,10 @@
                         updatedAt: new Date().toISOString(),
                         monthName: months[currentMonthIndex]
                     });
-                    alert(`¡Calendario de ${months[currentMonthIndex]} guardado en la nube!`);
+                    setToast(`Calendario de ${months[currentMonthIndex]} guardado`);
+                    setTimeout(() => setToast(null), 3000);
                 } catch (e) {
-                    alert("Error al guardar. Asegúrate de haber activado 'Firestore Database' en tu consola de Firebase.");
+                    setActiveWarning(["Error de guardado. Asegúrate de activar 'Firestore Database' en modo prueba en tu consola Firebase."]);
                 }
                 setSyncing(false);
             };
@@ -178,46 +216,70 @@
                 return days;
             }, [currentMonthIndex]);
 
-            const handleSelect = (dateKey, field, val) => {
-                const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
-                setSchedules(updated);
-                
-                // Validaciones Rápidas
-                const day = updated[dateKey];
-                if (day?.auditorio && day?.entrada) {
-                    if (!keyHolders.includes(day.auditorio) && !keyHolders.includes(day.entrada)) {
-                        setActiveWarning(["Seguridad: Falta alguien con llave."]);
-                    }
+            const validateRules = (dateKey, aud, ent, updated) => {
+                const msgs = [];
+                if (aud && ent && !keyHolders.includes(aud) && !keyHolders.includes(ent)) {
+                    msgs.push("Seguridad: Falta alguien con llave.");
                 }
-                
-                // Regla Ramón Perales (1 vez al mes)
-                if (val === "Ramón Perales") {
+                if ((aud === "Atilio" && ent === "Ramón Perales") || (aud === "Ramón Perales" && ent === "Atilio")) {
+                    msgs.push("Atilio y Ramón Perales no pueden estar juntos.");
+                }
+                restrictedUsers.forEach(u => {
                     let count = 0;
                     currentMonthDays.forEach(d => {
                         const data = updated[d.fullDate];
-                        if (data?.auditorio === "Ramón Perales" || data?.entrada === "Ramón Perales") count++;
+                        if (data?.auditorio === u || data?.entrada === u) count++;
                     });
-                    if (count > 1) setActiveWarning(["Ramón Perales no puede estar dos veces en el mes."]);
+                    if (count > 1 && (aud === u || ent === u)) msgs.push(`${u} no puede estar dos veces en el mes.`);
+                });
+                if (aud === "José" || ent === "José") {
+                    const checkMonth = (idx) => {
+                        if (idx < 0 || idx > 11) return false;
+                        const date = new Date(2026, idx, 1);
+                        while (date.getMonth() === idx) {
+                            const k = `2026-${idx+1}-${date.getDate()}`;
+                            if (updated[k]?.auditorio === "José" || updated[k]?.entrada === "José") return true;
+                            date.setDate(date.getDate() + 1);
+                        }
+                        return false;
+                    };
+                    if (checkMonth(currentMonthIndex - 1) || checkMonth(currentMonthIndex + 1)) {
+                        msgs.push("José no puede estar dos meses seguidos.");
+                    }
                 }
+                if (msgs.length > 0) setActiveWarning(msgs);
+            };
+
+            const handleSelect = (dateKey, field, val) => {
+                const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
+                setSchedules(updated);
+                validateRules(dateKey, updated[dateKey].auditorio, updated[dateKey].entrada, updated);
             };
 
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [currentMonthIndex, activeWarning, syncing]);
+            }, [currentMonthIndex, activeWarning, syncing, schedules]);
 
             return (
                 <div className="max-w-md mx-auto px-5 pt-8 animate-ios">
-                    {/* Alerta Nativa */}
+                    {/* Alerta Nativa iOS */}
                     {activeWarning && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
-                            <div className="bg-white rounded-[30px] shadow-2xl p-6 text-center max-w-[280px] w-full border border-white/20">
-                                <i data-lucide="alert-circle" className="w-10 h-10 text-red-500 mx-auto mb-3"></i>
+                            <div className="bg-white rounded-[28px] shadow-2xl p-6 text-center max-w-[280px] w-full border border-white/20">
+                                <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <i data-lucide="alert-circle" className="text-red-500 w-6 h-6"></i>
+                                </div>
                                 <h3 className="font-bold mb-2">Aviso</h3>
-                                {activeWarning.map((m,i) => <p key={i} className="text-[11px] text-gray-500 font-bold leading-tight">{m}</p>)}
-                                <button onClick={() => setActiveWarning(null)} className="mt-4 w-full py-3 text-blue-600 font-bold border-t active:bg-gray-50 transition-colors">OK</button>
+                                <div className="space-y-2">
+                                    {activeWarning.map((m,i) => <p key={i} className={`text-[11px] font-bold leading-tight ${i === 0 ? 'text-gray-900' : 'text-gray-500'}`}>{m}</p>)}
+                                </div>
+                                <button onClick={() => setActiveWarning(null)} className="mt-4 w-full py-3 text-blue-600 font-bold border-t active:bg-gray-50 transition-colors">Entendido</button>
                             </div>
                         </div>
                     )}
+
+                    {/* Toast Notification */}
+                    {toast && <div className="toast-msg">{toast}</div>}
 
                     {/* Sincronización */}
                     {syncing && (
@@ -234,19 +296,19 @@
                             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
                             <h1 className="text-3xl font-black tracking-tighter">Acomodadores</h1>
                         </div>
-                        <button onClick={saveMonthToCloud} disabled={syncing} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
+                        <button onClick={saveToCloud} disabled={syncing} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
                             <i data-lucide="cloud-upload" className="w-4 h-4"></i> Guardar
                         </button>
                     </header>
 
-                    {/* Selector de Mes */}
-                    <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center">
-                        <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} className="p-2 text-gray-400"><i data-lucide="chevron-left"></i></button>
-                        <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
-                        <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} className="p-2 text-gray-400"><i data-lucide="chevron-right"></i></button>
+                    {/* Selector Mes */}
+                    <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
+                        <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} className="p-2 text-gray-400 active:opacity-40 transition-opacity"><i data-lucide="chevron-left"></i></button>
+                        <div className="flex-1 text-center font-bold text-[10px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
+                        <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} className="p-2 text-gray-400 active:opacity-40 transition-opacity"><i data-lucide="chevron-right"></i></button>
                     </div>
 
-                    {/* Portadores de Llave */}
+                    {/* Llaves */}
                     <div className="mb-8 px-1">
                         <div className="flex items-center gap-1.5 mb-2.5">
                             <i data-lucide="key" className="w-3.5 h-3.5 text-blue-500"></i>
@@ -257,7 +319,7 @@
                         </div>
                     </div>
 
-                    {/* Planilla Principal */}
+                    {/* Planilla */}
                     <div className="ios-card overflow-hidden pb-4">
                         <div className="pt-8 pb-3 text-center">
                             <h2 className="text-2xl font-black uppercase italic tracking-tighter">{months[currentMonthIndex]}</h2>
@@ -268,19 +330,15 @@
                             <table className="w-full border-separate border-spacing-y-1">
                                 <thead>
                                     <tr className="text-gray-300 font-black uppercase tracking-[0.25em] text-[7px]">
-                                        <th className="py-2">DÍA</th>
-                                        <th className="py-2">AUDITORIO</th>
-                                        <th className="py-2">ENTRADA</th>
+                                        <th className="py-2 text-center">DÍA</th>
+                                        <th className="py-2 text-center">AUDITORIO</th>
+                                        <th className="py-2 text-center">ENTRADA</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {currentMonthDays.map((day) => {
-                                        const accent = day.isThursday ? "#000" : "var(--ios-teal)";
-                                        
-                                        // Filtro Jueves: Quitar Luis
+                                        const accent = day.isThursday ? "#000000" : "var(--ios-teal)";
                                         const audOpts = day.isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
-                                        
-                                        // Filtro Entrada: Jose solo Sábados, Quitar Luis de Jueves
                                         const entOpts = day.isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames;
 
                                         return (
