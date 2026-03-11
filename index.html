@@ -32,7 +32,6 @@
             overflow-x: hidden;
         }
 
-        /* Select Estilo iOS Nativo */
         .ios-select {
             -webkit-appearance: none;
             -moz-appearance: none;
@@ -43,7 +42,6 @@
             background-size: 10px;
         }
 
-        /* Efecto squircle para tarjetas iOS */
         .ios-card {
             border-radius: 36px;
             background: #FFFFFF;
@@ -56,47 +54,158 @@
         }
 
         .animate-ios { animation: ios-reveal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        .loader-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(4px);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDBdoOrYUZ-oy22g_Is2vw0kpEAaKVviRU",
+            authDomain: "acomodadores-df8a5.firebaseapp.com",
+            projectId: "acomodadores-df8a5",
+            storageBucket: "acomodadores-df8a5.firebasestorage.app",
+            messagingSenderId: "912664676824",
+            appId: "1:912664676824:web:9c832aabc194e85b638aad",
+            measurementId: "G-Q8V3CPCNR4"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Exponer a React
+        window.firebaseDB = db;
+        window.firebaseAuth = auth;
+        window.firestoreTools = { doc, setDoc, getDoc, collection };
+        window.authTools = { signInAnonymously, onAuthStateChanged };
+    </script>
+
+    <!-- Aplicación React -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
         const App = () => {
-            const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo
+            const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo 2026
             const [schedules, setSchedules] = useState({});
             const [activeWarning, setActiveWarning] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [saving, setSaving] = useState(false);
+            const [user, setUser] = useState(null);
 
             const months = [
                 "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
             ];
 
+            const appId = 'acomodadores-df8a5'; // ID de la aplicación para las rutas
             const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
-            
-            // Usuarios con restricción de "1 vez por mes"
             const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
-            
             const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
             
-            // Reglas de visibilidad base (Auditorio nunca admite Atilio, Ramón Perales ni José)
             const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
 
+            // EFECTO 1: Autenticación (REGLA 3)
             useEffect(() => {
-                const saved = localStorage.getItem('acomodadores-v17-storage');
-                if (saved) setSchedules(JSON.parse(saved));
+                const initAuth = async () => {
+                    if (!window.firebaseAuth) return;
+                    try {
+                        await window.authTools.signInAnonymously(window.firebaseAuth);
+                    } catch (err) {
+                        console.error("Error de Auth:", err);
+                        setLoading(false);
+                    }
+                };
+                initAuth();
+                const unsubscribe = window.authTools.onAuthStateChanged(window.firebaseAuth, (u) => {
+                    setUser(u);
+                });
+                return () => unsubscribe();
             }, []);
+
+            // EFECTO 2: Carga de datos al tener usuario o cambiar mes (REGLA 1)
+            useEffect(() => {
+                if (!user) return;
+                loadMonthData(currentMonthIndex);
+            }, [user, currentMonthIndex]);
+
+            const loadMonthData = async (index) => {
+                setLoading(true);
+                const { getDoc, doc } = window.firestoreTools;
+                const docName = `${months[index]}_2026`;
+                
+                // Ruta Estricta (REGLA 1)
+                const docPath = doc(window.firebaseDB, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+                
+                try {
+                    const docSnap = await getDoc(docPath);
+                    if (docSnap.exists()) {
+                        setSchedules(prev => ({
+                            ...prev,
+                            ...docSnap.data().schedules
+                        }));
+                    }
+                } catch (error) {
+                    console.error("Error en Firebase:", error);
+                    // Si falla por API deshabilitada, mostramos un aviso
+                    if (error.message.includes("permission-denied") || error.message.includes("Firestore API")) {
+                        setActiveWarning(["Error de Configuración: Debes habilitar la API de Firestore en tu consola de Firebase."]);
+                    }
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const saveToFirebase = async () => {
+                if (!user || !window.firebaseDB) return;
+                setSaving(true);
+                const { setDoc, doc } = window.firestoreTools;
+                const docName = `${months[currentMonthIndex]}_2026`;
+                
+                // Ruta Estricta (REGLA 1)
+                const docPath = doc(window.firebaseDB, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+
+                try {
+                    const currentMonthKeys = currentMonthDays.map(d => d.fullDate);
+                    const dataToSave = {};
+                    currentMonthKeys.forEach(k => {
+                        if (schedules[k]) dataToSave[k] = schedules[k];
+                    });
+
+                    await setDoc(docPath, {
+                        mes: months[currentMonthIndex],
+                        schedules: dataToSave,
+                        ultimaActualizacion: new Date().toISOString()
+                    });
+                    
+                    alert(`¡Datos de ${months[currentMonthIndex]} guardados!`);
+                } catch (error) {
+                    console.error("Error al guardar:", error);
+                    alert("No se pudo guardar. Verifica tu conexión o la configuración de Firebase.");
+                } finally {
+                    setSaving(false);
+                }
+            };
 
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [currentMonthIndex, activeWarning]);
-
-            const save = (updated) => {
-                setSchedules(updated);
-                localStorage.setItem('acomodadores-v17-storage', JSON.stringify(updated));
-            };
+            }, [currentMonthIndex, activeWarning, loading, saving, user]);
 
             const currentMonthDays = useMemo(() => {
                 const days = [];
@@ -118,18 +227,12 @@
 
             const validate = (dateKey, aud, ent, updated) => {
                 const msgs = [];
-                
-                // Seguridad básica
                 if (aud && ent && !keyHolders.includes(aud) && !keyHolders.includes(ent)) {
                     msgs.push("Seguridad: Falta alguien con llave.");
                 }
-                
-                // Incompatibilidad específica
                 if ((aud === "Atilio" && ent === "Ramón Perales") || (aud === "Ramón Perales" && ent === "Atilio")) {
                     msgs.push("Atilio y Ramón Perales no pueden estar juntos.");
                 }
-                
-                // Regla: No dos veces el mismo mes (para Atilio, José y Ramón Perales)
                 restrictedUsers.forEach(u => {
                     let count = 0;
                     currentMonthDays.forEach(d => {
@@ -141,7 +244,6 @@
                     }
                 });
 
-                // Regla específica para José: No dos meses seguidos
                 if (aud === "José" || ent === "José") {
                     const checkMonthForUser = (mIdx, user) => {
                         if (mIdx < 0 || mIdx > 11) return false;
@@ -153,26 +255,23 @@
                         }
                         return false;
                     };
-                    
                     if (checkMonthForUser(currentMonthIndex - 1, "José") || checkMonthForUser(currentMonthIndex + 1, "José")) {
                         msgs.push("José no puede estar dos meses seguidos.");
                     }
                 }
-
                 if (msgs.length > 0) setActiveWarning(msgs);
             };
 
             const handleSelect = (dateKey, field, val) => {
                 const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
-                save(updated);
+                setSchedules(updated);
                 validate(dateKey, updated[dateKey].auditorio, updated[dateKey].entrada, updated);
             };
 
             return (
                 <div className="max-w-md mx-auto px-5 pt-8 animate-ios">
-                    {/* Alerta Nativa */}
                     {activeWarning && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
                             <div className="bg-white/90 rounded-[24px] shadow-2xl max-w-[270px] w-full overflow-hidden border border-white/20">
                                 <div className="p-6 text-center">
                                     <div className="mx-auto w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-3">
@@ -188,19 +287,37 @@
                         </div>
                     )}
 
-                    <header className="mb-5 flex flex-col gap-1">
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
-                        <h1 className="text-3xl font-black tracking-tighter text-black pl-1">Acomodadores</h1>
+                    {(loading || saving) && (
+                        <div className="loader-overlay">
+                            <div className="flex flex-col items-center">
+                                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                <p className="mt-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    {saving ? 'Guardando...' : 'Sincronizando...'}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    <header className="mb-5 flex justify-between items-end pr-1">
+                        <div className="flex flex-col gap-1">
+                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
+                            <h1 className="text-3xl font-black tracking-tighter text-black pl-1">Acomodadores</h1>
+                        </div>
+                        <button 
+                            onClick={saveToFirebase}
+                            disabled={!user}
+                            className={`text-blue-600 font-bold text-sm bg-blue-50 px-4 py-2 rounded-full active:scale-95 transition-all flex items-center gap-1.5 ${!user ? 'opacity-50' : ''}`}
+                        >
+                            <i data-lucide="cloud-upload" className="w-4 h-4"></i> Guardar
+                        </button>
                     </header>
 
-                    {/* Navegador Mes (Estilo Segmented Control) */}
                     <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
                         <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} disabled={currentMonthIndex <= 0} className="p-2 disabled:opacity-10 text-gray-600"><i data-lucide="chevron-left" className="w-5 h-5"></i></button>
                         <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
                         <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} disabled={currentMonthIndex >= 11} className="p-2 text-gray-600"><i data-lucide="chevron-right" className="w-5 h-5"></i></button>
                     </div>
 
-                    {/* Personal Llave (Más compacto) */}
                     <div className="mb-8 px-1">
                         <div className="flex items-center gap-1.5 mb-2.5">
                             <i data-lucide="key" className="w-3.5 h-3.5 text-blue-500"></i>
@@ -211,7 +328,6 @@
                         </div>
                     </div>
 
-                    {/* Planilla (Ideal para Captura) */}
                     <div className="ios-card overflow-hidden pb-4">
                         <div className="pt-8 pb-3 text-center">
                             <h2 className="text-2xl font-black text-black tracking-tighter uppercase italic">{months[currentMonthIndex]}</h2>
@@ -229,17 +345,9 @@
                                 </thead>
                                 <tbody>
                                     {currentMonthDays.map((day) => {
-                                        // Acento: Negro para Jueves, Verde Agua para Sábados
                                         const accentColor = day.isThursday ? "#000000" : "#00897B";
-                                        
-                                        // Filtro Jueves: Quitar Luis de ambas columnas
-                                        const auditorioOptions = day.isThursday 
-                                            ? baseAuditorioOptions.filter(n => n !== "Luis")
-                                            : baseAuditorioOptions;
-
-                                        const entradaOptions = day.isThursday 
-                                            ? allNames.filter(n => n !== "José" && n !== "Luis") 
-                                            : allNames;
+                                        const auditorioOptions = day.isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
+                                        const entradaOptions = day.isThursday ? allNames.filter(n => n !== "José" && n !== "Luis") : allNames;
 
                                         return (
                                             <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E0F2F1]" : ""}>
