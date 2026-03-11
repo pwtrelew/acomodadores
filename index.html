@@ -1,395 +1,271 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Acomodadores</title>
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Download, 
+  Trash2, 
+  AlertCircle, 
+  Key, 
+  CheckCircle2,
+  CalendarDays,
+  Loader2,
+  CloudUpload
+} from 'lucide-react';
+
+// FIREBASE IMPORTS
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, collection } from "firebase/firestore";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDBdoOrYUZ-oy22g_Is2vw0kpEAaKVviRU",
+  authDomain: "acomodadores-df8a5.firebaseapp.com",
+  projectId: "acomodadores-df8a5",
+  storageBucket: "acomodadores-df8a5.firebasestorage.app",
+  messagingSenderId: "912664676824",
+  appId: "1:912664676824:web:9c832aabc194e85b638aad",
+  measurementId: "G-Q8V3CPCNR4"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const appId = "acomodadores-df8a5";
+
+const App = () => {
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo
+  const [year] = useState(2026);
+  const [schedules, setSchedules] = useState({});
+  const [activeWarning, setActiveWarning] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(true);
+  const [user, setUser] = useState(null);
+  const sheetRef = useRef(null);
+
+  const iosBlue = "#007AFF";
+  const iosTeal = "#00897B";
+
+  const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
+  const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
+  const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
+  const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
+
+  const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+  // AUTH & INITIAL SYNC
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth error:", err);
+        setIsSyncing(false);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) loadFromFirebase(currentMonthIndex);
+    });
+    return () => unsubscribe();
+  }, [currentMonthIndex]);
+
+  const loadFromFirebase = async (mIdx) => {
+    setIsSyncing(true);
+    const docName = `${months[mIdx]}_${year}`;
+    try {
+      // RULE 1: Strict Path
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        setSchedules(prev => ({ ...prev, ...snap.data().schedules }));
+      }
+    } catch (e) {
+      console.error("Load error:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const saveToFirebase = async () => {
+    if (!user) return;
+    setIsSyncing(true);
+    const docName = `${months[currentMonthIndex]}_${year}`;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+      await setDoc(docRef, {
+        schedules,
+        updatedAt: new Date().toISOString(),
+        year
+      });
+      alert("¡Sincronizado con la nube!");
+    } catch (e) {
+      console.error("Save error:", e);
+      alert("Error de permisos. Asegúrate de activar Firestore en la consola.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const currentMonthDays = useMemo(() => {
+    const days = [];
+    const date = new Date(year, currentMonthIndex, 1);
+    while (date.getMonth() === currentMonthIndex) {
+      const dw = date.getDay(); 
+      if (dw === 4 || dw === 6) {
+        days.push({
+          dayNum: date.getDate(),
+          short: dw === 4 ? "JUE" : "SÁB",
+          fullDate: `${year}-${currentMonthIndex + 1}-${date.getDate()}`,
+          isThursday: dw === 4
+        });
+      }
+      date.setDate(date.getDate() + 1);
+    }
+    return days;
+  }, [currentMonthIndex, year]);
+
+  const handleSelectChange = (dateKey, field, value) => {
+    const newSchedules = {
+      ...schedules,
+      [dateKey]: { ...(schedules[dateKey] || {}), [field]: value }
+    };
+    setSchedules(newSchedules);
     
-    <!-- Bibliotecas estables -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    // Quick Rule Check
+    const day = newSchedules[dateKey];
+    if (day?.auditorio && day?.entrada) {
+        if (!keyHolders.includes(day.auditorio) && !keyHolders.includes(day.entrada)) {
+            setActiveWarning(["Seguridad: Falta alguien con llave."]);
+        }
+    }
+  };
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  return (
+    <div className="min-h-screen bg-[#F2F2F7] text-[#1C1C1E] font-sans antialiased pb-12">
+      
+      {activeWarning && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/20 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-[24px] shadow-2xl max-w-[260px] w-full p-6 text-center border border-white/40 animate-in zoom-in-95">
+            <AlertCircle className="mx-auto text-red-500 mb-3" size={32} />
+            <h3 className="text-md font-bold mb-2">Regla</h3>
+            <div className="space-y-1">
+              {activeWarning.map((msg, i) => (
+                <p key={i} className="text-[11px] text-gray-600 font-bold leading-tight">{msg}</p>
+              ))}
+            </div>
+            <button onClick={() => setActiveWarning(null)} className="mt-4 w-full pt-3 text-[#007AFF] font-bold border-t">OK</button>
+          </div>
+        </div>
+      )}
+
+      {isSyncing && (
+        <div className="fixed inset-0 z-[150] bg-white/60 backdrop-blur-md flex flex-col items-center justify-center">
+          <Loader2 className="w-8 h-8 text-[#007AFF] animate-spin mb-2" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Sincronizando</p>
+        </div>
+      )}
+
+      <div className="max-w-md mx-auto pt-8 px-5">
         
-        :root {
-            --system-gray-6: #F2F2F7;
-            --system-blue: #007AFF;
-            --system-teal: #00897B;
-            --system-black: #000000;
-        }
+        <header className="mb-6 flex justify-between items-end">
+          <div>
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">{year}</p>
+            <h1 className="text-3xl font-black tracking-tighter">Acomodadores</h1>
+          </div>
+          <button 
+            onClick={saveToFirebase}
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-white text-[#007AFF] rounded-full font-bold text-xs shadow-sm active:scale-95 transition-all border border-blue-50"
+          >
+            <CloudUpload size={16} />
+            Guardar
+          </button>
+        </header>
 
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--system-gray-6);
-            margin: 0;
-            padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
-            color: var(--system-black);
-            -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
-        }
+        <section className="mb-6 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-1.5 mb-3 text-[#007AFF]">
+            <Key size={12} />
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tienen Llave</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {keyHolders.map(name => (
+              <span key={name} className="px-3 py-1 bg-[#F2F2F7] text-gray-700 rounded-lg text-[10px] font-bold border border-gray-50">{name}</span>
+            ))}
+          </div>
+        </section>
 
-        .ios-select {
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C7C7CC' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M6 9l6 6 6-6'%3e%3c/path%3e%3c/svg%3e");
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 10px;
-        }
+        <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
+          <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} disabled={currentMonthIndex <= 0} className="p-2 text-gray-400"><ChevronLeft size={20} /></button>
+          <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
+          <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} disabled={currentMonthIndex >= 11} className="p-2 text-gray-400"><ChevronRight size={20} /></button>
+        </div>
 
-        .ios-card {
-            border-radius: 36px;
-            background: #FFFFFF;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.04);
-        }
+        <div ref={sheetRef} className="bg-white rounded-[36px] shadow-xl border border-gray-100 overflow-hidden pb-6 animate-ios">
+          <div className="pt-10 pb-4 text-center">
+             <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase italic">{months[currentMonthIndex]}</h2>
+             <div className="w-8 h-1 bg-gray-100 mx-auto mt-4 rounded-full"></div>
+          </div>
 
-        @keyframes ios-reveal {
-            from { opacity: 0; transform: scale(0.98) translateY(10px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
+          <div className="px-4">
+            <table className="w-full border-separate border-spacing-y-1">
+              <thead>
+                <tr className="text-gray-300 text-[8px] font-black uppercase tracking-[0.3em]">
+                  <th className="py-2">DÍA</th>
+                  <th className="py-2">AUDITORIO</th>
+                  <th className="py-2">ENTRADA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentMonthDays.map((day) => {
+                  const dayColor = day.isThursday ? "#000000" : iosTeal;
+                  const audOpts = day.isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
+                  const entOpts = day.isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames;
 
-        .animate-ios { animation: ios-reveal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
-
-        .loader-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(255,255,255,0.7);
-            backdrop-filter: blur(4px);
-            z-index: 300;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDBdoOrYUZ-oy22g_Is2vw0kpEAaKVviRU",
-            authDomain: "acomodadores-df8a5.firebaseapp.com",
-            projectId: "acomodadores-df8a5",
-            storageBucket: "acomodadores-df8a5.firebasestorage.app",
-            messagingSenderId: "912664676824",
-            appId: "1:912664676824:web:9c832aabc194e85b638aad",
-            measurementId: "G-Q8V3CPCNR4"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // Exponer a React
-        window.firebaseDB = db;
-        window.firebaseAuth = auth;
-        window.firestoreTools = { doc, setDoc, getDoc, collection };
-        window.authTools = { signInAnonymously, onAuthStateChanged };
-    </script>
-
-    <!-- Aplicación React -->
-    <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-
-        const App = () => {
-            const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo 2026
-            const [schedules, setSchedules] = useState({});
-            const [activeWarning, setActiveWarning] = useState(null);
-            const [loading, setLoading] = useState(true);
-            const [saving, setSaving] = useState(false);
-            const [user, setUser] = useState(null);
-
-            const months = [
-                "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-            ];
-
-            const appId = 'acomodadores-df8a5'; // ID de la aplicación para las rutas
-            const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
-            const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
-            const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
-            
-            const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
-
-            // EFECTO 1: Autenticación (REGLA 3)
-            useEffect(() => {
-                const initAuth = async () => {
-                    if (!window.firebaseAuth) return;
-                    try {
-                        await window.authTools.signInAnonymously(window.firebaseAuth);
-                    } catch (err) {
-                        console.error("Error de Auth:", err);
-                        setLoading(false);
-                    }
-                };
-                initAuth();
-                const unsubscribe = window.authTools.onAuthStateChanged(window.firebaseAuth, (u) => {
-                    setUser(u);
-                });
-                return () => unsubscribe();
-            }, []);
-
-            // EFECTO 2: Carga de datos al tener usuario o cambiar mes (REGLA 1)
-            useEffect(() => {
-                if (!user) return;
-                loadMonthData(currentMonthIndex);
-            }, [user, currentMonthIndex]);
-
-            const loadMonthData = async (index) => {
-                setLoading(true);
-                const { getDoc, doc } = window.firestoreTools;
-                const docName = `${months[index]}_2026`;
-                
-                // Ruta Estricta (REGLA 1)
-                const docPath = doc(window.firebaseDB, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
-                
-                try {
-                    const docSnap = await getDoc(docPath);
-                    if (docSnap.exists()) {
-                        setSchedules(prev => ({
-                            ...prev,
-                            ...docSnap.data().schedules
-                        }));
-                    }
-                } catch (error) {
-                    console.error("Error en Firebase:", error);
-                    // Si falla por API deshabilitada, mostramos un aviso
-                    if (error.message.includes("permission-denied") || error.message.includes("Firestore API")) {
-                        setActiveWarning(["Error de Configuración: Debes habilitar la API de Firestore en tu consola de Firebase."]);
-                    }
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            const saveToFirebase = async () => {
-                if (!user || !window.firebaseDB) return;
-                setSaving(true);
-                const { setDoc, doc } = window.firestoreTools;
-                const docName = `${months[currentMonthIndex]}_2026`;
-                
-                // Ruta Estricta (REGLA 1)
-                const docPath = doc(window.firebaseDB, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
-
-                try {
-                    const currentMonthKeys = currentMonthDays.map(d => d.fullDate);
-                    const dataToSave = {};
-                    currentMonthKeys.forEach(k => {
-                        if (schedules[k]) dataToSave[k] = schedules[k];
-                    });
-
-                    await setDoc(docPath, {
-                        mes: months[currentMonthIndex],
-                        schedules: dataToSave,
-                        ultimaActualizacion: new Date().toISOString()
-                    });
-                    
-                    alert(`¡Datos de ${months[currentMonthIndex]} guardados!`);
-                } catch (error) {
-                    console.error("Error al guardar:", error);
-                    alert("No se pudo guardar. Verifica tu conexión o la configuración de Firebase.");
-                } finally {
-                    setSaving(false);
-                }
-            };
-
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [currentMonthIndex, activeWarning, loading, saving, user]);
-
-            const currentMonthDays = useMemo(() => {
-                const days = [];
-                const date = new Date(2026, currentMonthIndex, 1);
-                while (date.getMonth() === currentMonthIndex) {
-                    const dayOfWeek = date.getDay(); 
-                    if (dayOfWeek === 4 || dayOfWeek === 6) {
-                        days.push({
-                            dayNum: date.getDate(),
-                            short: dayOfWeek === 4 ? "JUE" : "SÁB",
-                            fullDate: `2026-${currentMonthIndex + 1}-${date.getDate()}`,
-                            isThursday: dayOfWeek === 4
-                        });
-                    }
-                    date.setDate(date.getDate() + 1);
-                }
-                return days;
-            }, [currentMonthIndex]);
-
-            const validate = (dateKey, aud, ent, updated) => {
-                const msgs = [];
-                if (aud && ent && !keyHolders.includes(aud) && !keyHolders.includes(ent)) {
-                    msgs.push("Seguridad: Falta alguien con llave.");
-                }
-                if ((aud === "Atilio" && ent === "Ramón Perales") || (aud === "Ramón Perales" && ent === "Atilio")) {
-                    msgs.push("Atilio y Ramón Perales no pueden estar juntos.");
-                }
-                restrictedUsers.forEach(u => {
-                    let count = 0;
-                    currentMonthDays.forEach(d => {
-                        const data = updated[d.fullDate];
-                        if (data?.auditorio === u || data?.entrada === u) count++;
-                    });
-                    if (count > 1 && (aud === u || ent === u)) {
-                        msgs.push(`${u} no puede estar dos veces un mismo mes.`);
-                    }
-                });
-
-                if (aud === "José" || ent === "José") {
-                    const checkMonthForUser = (mIdx, user) => {
-                        if (mIdx < 0 || mIdx > 11) return false;
-                        const date = new Date(2026, mIdx, 1);
-                        while (date.getMonth() === mIdx) {
-                            const k = `2026-${mIdx+1}-${date.getDate()}`;
-                            if (updated[k]?.auditorio === user || updated[k]?.entrada === user) return true;
-                            date.setDate(date.getDate() + 1);
-                        }
-                        return false;
-                    };
-                    if (checkMonthForUser(currentMonthIndex - 1, "José") || checkMonthForUser(currentMonthIndex + 1, "José")) {
-                        msgs.push("José no puede estar dos meses seguidos.");
-                    }
-                }
-                if (msgs.length > 0) setActiveWarning(msgs);
-            };
-
-            const handleSelect = (dateKey, field, val) => {
-                const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
-                setSchedules(updated);
-                validate(dateKey, updated[dateKey].auditorio, updated[dateKey].entrada, updated);
-            };
-
-            return (
-                <div className="max-w-md mx-auto px-5 pt-8 animate-ios">
-                    {activeWarning && (
-                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
-                            <div className="bg-white/90 rounded-[24px] shadow-2xl max-w-[270px] w-full overflow-hidden border border-white/20">
-                                <div className="p-6 text-center">
-                                    <div className="mx-auto w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-3">
-                                        <i data-lucide="alert-circle" className="w-6 h-6"></i>
-                                    </div>
-                                    <h3 className="text-md font-bold text-gray-900 mb-2 tracking-tight">Aviso</h3>
-                                    <div className="space-y-1">
-                                        {activeWarning.map((m, i) => <p key={i} className="text-[11px] text-gray-500 font-semibold leading-snug px-2">{m}</p>)}
-                                    </div>
-                                </div>
-                                <button onClick={() => setActiveWarning(null)} className="w-full border-t border-gray-100 py-4 text-blue-600 font-bold active:bg-gray-100 transition-colors">OK</button>
-                            </div>
+                  return (
+                    <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E0F2F1]" : ""}>
+                      <td className={`py-1 pr-1 ${!day.isThursday ? "rounded-l-[22px]" : ""}`}>
+                        <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[22px] bg-white border border-gray-50 shadow-sm">
+                          <span className="text-[8px] font-black tracking-tighter mb-0.5" style={{ color: dayColor }}>{day.short}</span>
+                          <span className="text-2xl font-black leading-none tracking-tighter" style={{ color: dayColor }}>{day.dayNum}</span>
                         </div>
-                    )}
-
-                    {(loading || saving) && (
-                        <div className="loader-overlay">
-                            <div className="flex flex-col items-center">
-                                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                <p className="mt-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                    {saving ? 'Guardando...' : 'Sincronizando...'}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    <header className="mb-5 flex justify-between items-end pr-1">
-                        <div className="flex flex-col gap-1">
-                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
-                            <h1 className="text-3xl font-black tracking-tighter text-black pl-1">Acomodadores</h1>
-                        </div>
-                        <button 
-                            onClick={saveToFirebase}
-                            disabled={!user}
-                            className={`text-blue-600 font-bold text-sm bg-blue-50 px-4 py-2 rounded-full active:scale-95 transition-all flex items-center gap-1.5 ${!user ? 'opacity-50' : ''}`}
+                      </td>
+                      <td className="py-1 px-1">
+                        <select
+                          value={schedules[day.fullDate]?.auditorio || ''}
+                          onChange={(e) => handleSelectChange(day.fullDate, 'auditorio', e.target.value)}
+                          className="w-full appearance-none bg-white/50 text-gray-900 font-bold py-3.5 px-4 rounded-[18px] border border-transparent shadow-sm text-xs outline-none cursor-pointer"
                         >
-                            <i data-lucide="cloud-upload" className="w-4 h-4"></i> Guardar
-                        </button>
-                    </header>
+                          <option value="">—</option>
+                          {audOpts.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </td>
+                      <td className={`py-1 px-1 ${!day.isThursday ? "rounded-r-[22px]" : ""}`}>
+                        <select
+                          value={schedules[day.fullDate]?.entrada || ''}
+                          onChange={(e) => handleSelectChange(day.fullDate, 'entrada', e.target.value)}
+                          className="w-full appearance-none bg-white/50 text-gray-900 font-bold py-3.5 px-4 rounded-[18px] border border-transparent shadow-sm text-xs outline-none cursor-pointer"
+                        >
+                          <option value="">—</option>
+                          {entOpts.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <style dangerouslySetInnerHTML={{ __html: `
+        .animate-ios { animation: reveal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        @keyframes reveal { from { opacity: 0; transform: scale(0.98) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        select { background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C7C7CC' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M6 9l6 6 6-6'%3e%3c/path%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 10px center; background-size: 10px; }
+      `}} />
+    </div>
+  );
+};
 
-                    <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
-                        <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} disabled={currentMonthIndex <= 0} className="p-2 disabled:opacity-10 text-gray-600"><i data-lucide="chevron-left" className="w-5 h-5"></i></button>
-                        <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
-                        <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} disabled={currentMonthIndex >= 11} className="p-2 text-gray-600"><i data-lucide="chevron-right" className="w-5 h-5"></i></button>
-                    </div>
-
-                    <div className="mb-8 px-1">
-                        <div className="flex items-center gap-1.5 mb-2.5">
-                            <i data-lucide="key" className="w-3.5 h-3.5 text-blue-500"></i>
-                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Tienen Llave</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            {keyHolders.map(n => <span key={n} className="px-2.5 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-gray-100/50 text-gray-700">{n}</span>)}
-                        </div>
-                    </div>
-
-                    <div className="ios-card overflow-hidden pb-4">
-                        <div className="pt-8 pb-3 text-center">
-                            <h2 className="text-2xl font-black text-black tracking-tighter uppercase italic">{months[currentMonthIndex]}</h2>
-                            <div className="w-8 h-1 bg-gray-100 mx-auto mt-4 rounded-full"></div>
-                        </div>
-
-                        <div className="px-4">
-                            <table className="w-full border-separate border-spacing-y-1">
-                                <thead>
-                                    <tr className="text-black font-black uppercase tracking-[0.25em]">
-                                        <th className="py-2 px-3 text-center text-[7px] text-gray-300">DÍA</th>
-                                        <th className="py-2 px-1 text-center text-[10px]">AUDITORIO</th>
-                                        <th className="py-2 px-1 text-center text-[10px]">ENTRADA</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {currentMonthDays.map((day) => {
-                                        const accentColor = day.isThursday ? "#000000" : "#00897B";
-                                        const auditorioOptions = day.isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
-                                        const entradaOptions = day.isThursday ? allNames.filter(n => n !== "José" && n !== "Luis") : allNames;
-
-                                        return (
-                                            <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E0F2F1]" : ""}>
-                                                <td className={`py-0.5 pr-1 ${!day.isThursday ? "rounded-l-[22px]" : ""}`}>
-                                                    <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[22px] bg-gray-50/50 border border-gray-100/50">
-                                                        <span className="text-[8px] font-black tracking-tighter mb-0.5" style={{ color: accentColor }}>{day.short}</span>
-                                                        <span className="text-2xl font-black leading-none tracking-tighter" style={{ color: accentColor }}>{day.dayNum}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-0.5 px-0.5">
-                                                    <select 
-                                                        value={schedules[day.fullDate]?.auditorio || ''} 
-                                                        onChange={(e) => handleSelect(day.fullDate, 'auditorio', e.target.value)} 
-                                                        className="ios-select w-full bg-gray-50 text-black font-bold py-3.5 px-4 rounded-[18px] text-[11px] outline-none cursor-pointer border border-transparent focus:bg-white transition-all shadow-sm shadow-black/5"
-                                                    >
-                                                        <option value="">—</option>
-                                                        {auditorioOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td className={`py-0.5 px-0.5 ${!day.isThursday ? "rounded-r-[22px]" : ""}`}>
-                                                    <select 
-                                                        value={schedules[day.fullDate]?.entrada || ''} 
-                                                        onChange={(e) => handleSelect(day.fullDate, 'entrada', e.target.value)} 
-                                                        className="ios-select w-full bg-gray-50 text-black font-bold py-3.5 px-4 rounded-[18px] text-[11px] outline-none cursor-pointer border border-transparent focus:bg-white transition-all shadow-sm shadow-black/5"
-                                                    >
-                                                        <option value="">—</option>
-                                                        {entradaOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+export default App;
