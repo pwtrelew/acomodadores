@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Acomodadores 2026</title>
     
-    <!-- Configuración para que sea una App en iPhone -->
+    <!-- Configuración para PWA (App instalable) -->
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Acomodadores">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1048/1048953.png">
     
-    <!-- Librerías de diseño y lógica -->
+    <!-- Librerías Externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -54,11 +54,11 @@
             background-size: 10px;
         }
 
-        @keyframes ios-reveal {
+        @keyframes reveal {
             from { opacity: 0; transform: scale(0.98) translateY(10px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
-        .animate-ios { animation: ios-reveal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .animate-ios { animation: reveal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
         .loader-overlay {
             position: fixed; inset: 0; z-index: 500;
@@ -83,7 +83,7 @@
 <body>
     <div id="root"></div>
 
-    <!-- Integración Firebase (Configuración corregida) -->
+    <!-- Modulo Firebase -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -103,12 +103,11 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // Pasamos Firebase a la ventana global para que React lo use
         window.fb = { db, auth, doc, setDoc, getDoc, signInAnonymously, onAuthStateChanged };
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
-    <!-- Aplicación React -->
+    <!-- App React -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
@@ -120,64 +119,60 @@
             const [activeWarning, setActiveWarning] = useState(null);
             const [toast, setToast] = useState(null);
 
-            const appId = 'acomodadores-df8a5';
             const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
             const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
             const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
             const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
             
-            // Regla: Auditorio NO admite Atilio, Ramón Perales ni José
+            // Filtro para Auditorio
             const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
 
-            // Sincronización con Firebase (Regla 3: Auth primero)
+            // Sincronización Inicial
             useEffect(() => {
-                const initAuth = async () => {
+                const initSync = async () => {
                     if (!window.fb) return;
                     try {
                         const { auth, signInAnonymously, onAuthStateChanged } = window.fb;
                         await signInAnonymously(auth);
                         onAuthStateChanged(auth, (u) => {
                             setUser(u);
-                            if (u) loadMonthData(currentMonthIndex);
+                            if (u) loadData(currentMonthIndex);
                         });
                     } catch (e) {
-                        console.error("Auth Error:", e);
+                        console.error(e);
                         if (e.code === 'auth/configuration-not-found') {
-                            setActiveWarning(["Configuración requerida:", "Debes activar el 'Inicio de sesión anónimo' en tu consola de Firebase."]);
+                            setActiveWarning(["Error de Configuración:", "Activa el inicio de sesión anónimo en Firebase."]);
                         }
                         setSyncing(false);
                     }
                 };
 
-                if (window.fb) initAuth();
-                else window.addEventListener('firebase-ready', initAuth);
-                return () => window.removeEventListener('firebase-ready', initAuth);
+                if (window.fb) initSync();
+                else window.addEventListener('firebase-ready', initSync);
+                return () => window.removeEventListener('firebase-ready', initSync);
             }, [currentMonthIndex]);
 
-            const loadMonthData = async (mIdx) => {
+            const loadData = async (mIdx) => {
                 setSyncing(true);
                 const { db, getDoc, doc } = window.fb;
                 const docId = `${months[mIdx]}_2026`;
                 try {
-                    // Regla 1: Ruta estricta
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docId);
+                    const docRef = doc(db, 'artifacts', 'acomodadores-df8a5', 'public', 'data', 'calendarios', docId);
                     const snap = await getDoc(docRef);
                     if (snap.exists()) {
                         setSchedules(prev => ({ ...prev, ...snap.data().schedules }));
                     }
-                } catch (e) {
-                    console.error("Load error:", e);
-                }
+                } catch (e) { console.error(e); }
                 setSyncing(false);
             };
 
-            const saveToCloud = async () => {
+            const saveData = async () => {
                 if (!user) return;
                 setSyncing(true);
                 const { db, setDoc, doc } = window.fb;
                 const docId = `${months[currentMonthIndex]}_2026`;
                 try {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docId);
+                    const docRef = doc(db, 'artifacts', 'acomodadores-df8a5', 'public', 'data', 'calendarios', docId);
                     await setDoc(docRef, {
                         schedules,
                         updatedAt: new Date().toISOString()
@@ -185,7 +180,7 @@
                     setToast(`Calendario de ${months[currentMonthIndex]} guardado`);
                     setTimeout(() => setToast(null), 3000);
                 } catch (e) {
-                    setActiveWarning(["Error al guardar. Verifica que Firestore esté activado en modo prueba."]);
+                    setActiveWarning(["Error al guardar. Activa Firestore en modo prueba."]);
                 }
                 setSyncing(false);
             };
@@ -212,27 +207,32 @@
                 const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
                 setSchedules(updated);
                 
-                // Validaciones de Reglas
-                const d = updated[dateKey];
-                if (d?.auditorio && d?.entrada) {
-                    // Regla Llaves
-                    if (!keyHolders.includes(d.auditorio) && !keyHolders.includes(d.entrada)) {
+                // Validaciones Rápidas
+                const day = updated[dateKey];
+                if (day?.auditorio && day?.entrada) {
+                    if (!keyHolders.includes(day.auditorio) && !keyHolders.includes(day.entrada)) {
                         setActiveWarning(["Seguridad: Falta alguien con llave."]);
                     }
-                    // Regla Incompatibilidad
-                    if ((d.auditorio === "Atilio" && d.entrada === "Ramón Perales") || (d.auditorio === "Ramón Perales" && d.entrada === "Atilio")) {
+                    if ((day.auditorio === "Atilio" && day.entrada === "Ramón Perales") || (day.auditorio === "Ramón Perales" && day.entrada === "Atilio")) {
                         setActiveWarning(["Atilio y Ramón Perales no pueden estar juntos."]);
                     }
                 }
-                
-                // Regla Frecuencia (Max 1 vez al mes)
-                if (restrictedUsers.includes(val)) {
-                    let count = 0;
-                    currentMonthDays.forEach(day => {
-                        const data = updated[day.fullDate];
-                        if (data?.auditorio === val || data?.entrada === val) count++;
-                    });
-                    if (count > 1) setActiveWarning([`${val} no puede estar dos veces en el mes.`]);
+
+                // Regla José meses seguidos
+                if (val === "José") {
+                    const checkMonth = (idx) => {
+                        if (idx < 0 || idx > 11) return false;
+                        const date = new Date(2026, idx, 1);
+                        while (date.getMonth() === idx) {
+                            const k = `2026-${idx+1}-${date.getDate()}`;
+                            if (updated[k]?.auditorio === "José" || updated[k]?.entrada === "José") return true;
+                            date.setDate(date.getDate() + 1);
+                        }
+                        return false;
+                    };
+                    if (checkMonth(currentMonthIndex - 1) || checkMonth(currentMonthIndex + 1)) {
+                        setActiveWarning(["José no puede estar dos meses seguidos."]);
+                    }
                 }
             };
 
@@ -242,14 +242,13 @@
 
             return (
                 <div className="max-w-md mx-auto px-5 pt-8 animate-ios">
-                    {/* Alerta Nativa iOS */}
                     {activeWarning && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
                             <div className="bg-white rounded-[28px] shadow-2xl p-6 text-center max-w-[280px] w-full">
                                 <i data-lucide="alert-circle" className="w-10 h-10 text-red-500 mx-auto mb-3"></i>
-                                <h3 className="font-bold mb-2">Aviso</h3>
-                                {activeWarning.map((m,i) => <p key={i} className={`text-[11px] font-bold mb-1 ${i===0?'text-gray-900':'text-gray-500'}`}>{m}</p>)}
-                                <button onClick={() => setActiveWarning(null)} className="mt-4 w-full py-3 text-blue-600 font-bold border-t active:bg-gray-50">Entendido</button>
+                                <h3 className="font-bold mb-2 tracking-tighter">Aviso</h3>
+                                {activeWarning.map((m,i) => <p key={i} className={`text-[11px] font-bold leading-tight mb-1 ${i===0?'text-gray-900':'text-gray-500'}`}>{m}</p>)}
+                                <button onClick={() => setActiveWarning(null)} className="mt-4 w-full py-3 text-blue-600 font-bold border-t active:bg-gray-50 transition-colors">Entendido</button>
                             </div>
                         </div>
                     )}
@@ -260,28 +259,29 @@
                         <div className="loader-overlay">
                             <div className="flex flex-col items-center">
                                 <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                <p className="mt-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando</p>
+                                <p className="mt-4 text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Sincronizando</p>
                             </div>
                         </div>
                     )}
 
-                    <header className="mb-6 flex justify-between items-end">
+                    <header className="mb-6 flex justify-between items-end px-1">
                         <div>
                             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
                             <h1 className="text-3xl font-black tracking-tighter">Acomodadores</h1>
                         </div>
-                        <button onClick={saveToCloud} disabled={syncing} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
+                        <button onClick={saveData} disabled={syncing} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
                             <i data-lucide="cloud-upload" className="w-4 h-4"></i> Guardar
                         </button>
                     </header>
 
-                    {/* Navegador de Mes */}
+                    {/* Navegador */}
                     <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
                         <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} className="p-2 text-gray-400"><i data-lucide="chevron-left"></i></button>
                         <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
                         <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} className="p-2 text-gray-400"><i data-lucide="chevron-right"></i></button>
                     </div>
 
+                    {/* Llaves */}
                     <div className="mb-8 px-1">
                         <div className="flex items-center gap-1.5 mb-2.5 pl-1 text-blue-500">
                             <i data-lucide="key" className="w-3.5 h-3.5"></i>
@@ -292,7 +292,8 @@
                         </div>
                     </div>
 
-                    <div className="ios-card overflow-hidden pb-4">
+                    {/* Planilla */}
+                    <div className="ios-card overflow-hidden pb-4 mb-12">
                         <div className="pt-8 pb-3 text-center">
                             <h2 className="text-2xl font-black uppercase italic tracking-tighter">{months[currentMonthIndex]}</h2>
                             <div className="w-8 h-1 bg-gray-100 mx-auto mt-4 rounded-full"></div>
@@ -301,7 +302,7 @@
                         <div className="px-4">
                             <table className="w-full border-separate border-spacing-y-1">
                                 <thead>
-                                    <tr className="text-gray-300 font-black uppercase tracking-[0.25em] text-[7px]">
+                                    <tr className="text-black font-black uppercase tracking-[0.25em] text-[11px]">
                                         <th className="py-2 text-center">DÍA</th>
                                         <th className="py-2 text-center">AUDITORIO</th>
                                         <th className="py-2 text-center">ENTRADA</th>
