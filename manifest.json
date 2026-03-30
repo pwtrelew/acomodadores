@@ -1,6 +1,6 @@
 {
   "short_name": "Acomodadores",
-  "name": "Gestor de Acomodadores 2026",
+  "name": "Gestor de Acomodadores",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/1048/1048953.png",
@@ -9,9 +9,8 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": "./index.html",
+  "start_url": ".",
   "display": "standalone",
-  "theme_color": "#F2F2F7",
-  "background_color": "#F2F2F7",
-  "orientation": "portrait"
+  "theme_color": "#000000",
+  "background_color": "#000000"
 }
