@@ -1,360 +1,335 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Acomodadores 2026</title>
-    
-    <!-- Configuración para PWA (App instalable) -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Acomodadores">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1048/1048953.png">
-    
-    <!-- Librerías Externas -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Download, 
+  Trash2, 
+  AlertCircle, 
+  Key, 
+  CheckCircle2,
+  CalendarDays,
+  Check,
+  ChevronsUpDown,
+  Moon,
+  Sun
+} from 'lucide-react';
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+// FIREBASE IMPORTS
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, collection } from "firebase/firestore";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDBdoOrYUZ-oy22g_Is2vw0kpEAaKVviRU",
+  authDomain: "acomodadores-df8a5.firebaseapp.com",
+  projectId: "acomodadores-df8a5",
+  storageBucket: "acomodadores-df8a5.firebasestorage.app",
+  messagingSenderId: "912664676824",
+  appId: "1:912664676824:web:9c832aabc194e85b638aad",
+  measurementId: "G-Q8V3CPCNR4"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const appId = "acomodadores-df8a5";
+
+const App = () => {
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo
+  const [year] = useState(2026);
+  const [schedules, setSchedules] = useState({});
+  const [activeWarning, setActiveWarning] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [user, setUser] = useState(null);
+  const sheetRef = useRef(null);
+
+  // Refs para autoguardado silencioso
+  const initialLoadDone = useRef(false);
+  const schedulesRef = useRef({});
+
+  // NUEVOS ESTADOS PARA LA EXPERIENCIA NATIVA iOS
+  const [theme, setTheme] = useState('light');
+  const [pickerConfig, setPickerConfig] = useState({ isOpen: false, dateKey: null, field: null, options: [], currentValue: '' });
+
+  const iosBlue = "#007AFF";
+  const iosTeal = "#00897B";
+
+  const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
+  const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
+  const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
+  const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
+
+  const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+  // AUTH & INITIAL SYNC
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth error:", err);
+        setIsSyncing(false);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) loadFromFirebase(currentMonthIndex);
+    });
+    return () => unsubscribe();
+  }, [currentMonthIndex]);
+
+  const loadFromFirebase = async (mIdx) => {
+    initialLoadDone.current = false;
+    const docName = `${months[mIdx]}_${year}`;
+    try {
+      // RULE 1: Strict Path
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        setSchedules(snap.data().schedules || {});
+        schedulesRef.current = snap.data().schedules || {};
+      } else {
+        setSchedules({});
+        schedulesRef.current = {};
+      }
+    } catch (e) {
+      console.error("Load error:", e);
+    } finally {
+      setTimeout(() => { initialLoadDone.current = true; }, 500);
+    }
+  };
+
+  // Autoguardado silencioso
+  useEffect(() => {
+    if (!initialLoadDone.current || !user) return;
+    if (JSON.stringify(schedules) === JSON.stringify(schedulesRef.current)) return;
+
+    const timeoutId = setTimeout(async () => {
+      const docName = `${months[currentMonthIndex]}_${year}`;
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'calendarios', docName);
+        await setDoc(docRef, {
+          schedules,
+          updatedAt: new Date().toISOString(),
+          year
+        });
+        schedulesRef.current = schedules;
+      } catch (e) {
+        console.error("Auto-save error:", e);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timeoutId);
+  }, [schedules, currentMonthIndex, user, year, months]);
+
+  const currentMonthDays = useMemo(() => {
+    const days = [];
+    const date = new Date(year, currentMonthIndex, 1);
+    while (date.getMonth() === currentMonthIndex) {
+      const dw = date.getDay(); 
+      if (dw === 4 || dw === 6) {
+        days.push({
+          dayNum: date.getDate(),
+          short: dw === 4 ? "JUE" : "SÁB",
+          fullDate: `${year}-${currentMonthIndex + 1}-${date.getDate()}`,
+          isThursday: dw === 4
+        });
+      }
+      date.setDate(date.getDate() + 1);
+    }
+    return days;
+  }, [currentMonthIndex, year]);
+
+  const handleSelectChange = (dateKey, field, value) => {
+    const newSchedules = {
+      ...schedules,
+      [dateKey]: { ...(schedules[dateKey] || {}), [field]: value }
+    };
+    setSchedules(newSchedules);
+    
+    // Quick Rule Check
+    const day = newSchedules[dateKey];
+    if (day?.auditorio && day?.entrada) {
+        if (!keyHolders.includes(day.auditorio) && !keyHolders.includes(day.entrada)) {
+            setActiveWarning(["Seguridad: Falta alguien con llave."]);
+        }
+    }
+  };
+
+  // LÓGICA DEL TEMA Y DEL SELECTOR INFERIOR ESTILO APPLE
+  useEffect(() => {
+    const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(isDark ? 'dark' : 'light');
+  }, []);
+
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  const openPicker = (dateKey, field, isThursday) => {
+    let options = [];
+    if (field === 'auditorio') {
+        options = isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
+    } else {
+        options = isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames;
+    }
+    options = ['—', ...options];
+    setPickerConfig({ isOpen: true, dateKey, field, options, currentValue: schedules[dateKey]?.[field] || '' });
+  };
+
+  const handleSelectFromPicker = (val) => {
+    if (pickerConfig.field === 'month') {
+      const newIndex = months.indexOf(val);
+      if (newIndex !== -1) setCurrentMonthIndex(newIndex);
+      setPickerConfig(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    const finalVal = val === '—' ? '' : val;
+    handleSelectChange(pickerConfig.dateKey, pickerConfig.field, finalVal);
+    setPickerConfig(prev => ({ ...prev, isOpen: false }));
+  };
+
+  return (
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-black text-white' : 'bg-[#F2F2F7] text-black'} font-sans antialiased pb-12 transition-colors duration-300`} style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif', WebkitTapHighlightColor: 'transparent' }}>
+      
+      {/* ALERTA ESTILO iOS (UIAlertController) */}
+      {activeWarning && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-md animate-in fade-in duration-200">
+          <div className={`backdrop-blur-2xl rounded-[14px] shadow-2xl w-[270px] text-center overflow-hidden animate-in zoom-in-95 duration-200 ${theme === 'dark' ? 'bg-[#1C1C1E]/85 border border-[#38383A]' : 'bg-white/85 border border-white/40'}`}>
+            <div className="p-5 pt-6">
+              <h3 className="text-[17px] font-semibold mb-1 tracking-tight">Aviso</h3>
+              <div className="space-y-1">
+                {activeWarning.map((msg, i) => (
+                  <p key={i} className={`text-[13px] leading-tight ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{msg}</p>
+                ))}
+              </div>
+            </div>
+            <button onClick={() => setActiveWarning(null)} className={`w-full py-3 text-[17px] text-[#007AFF] font-semibold border-t ${theme === 'dark' ? 'border-[#38383A] active:bg-white/10' : 'border-gray-200/50 active:bg-black/5'} transition-colors`}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CONTENEDOR PRINCIPAL TIPO iPHONE MAX */}
+      <div className="max-w-[428px] mx-auto pt-[env(safe-area-inset-top,48px)] px-5">
         
-        :root {
-            --ios-bg: #F2F2F7;
-            --ios-blue: #007AFF;
-            --ios-teal: #00897B;
-            --ios-teal-light: #E0F2F1;
-        }
+        {/* HEADER LARGE TITLE */}
+        <header className="mb-6 flex justify-between items-center pt-4">
+          <div>
+            <h1 className="text-[34px] font-bold tracking-[-0.04em] leading-none">Acomodadores</h1>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={toggleTheme} className={`p-2.5 rounded-full ${theme === 'dark' ? 'bg-[#1C1C1E] text-[#0A84FF]' : 'bg-white text-[#007AFF]'} shadow-sm active:scale-95 transition-all`}>
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
+        </header>
 
-        body { 
-            font-family: 'Inter', -apple-system, system-ui, sans-serif;
-            background-color: var(--ios-bg);
-            margin: 0;
-            padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
-            -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
-            user-select: none;
-        }
+        {/* TABLA TIPO "INSET GROUPED LIST" */}
+        <div className={`rounded-[24px] shadow-sm mb-6 ${theme === 'dark' ? 'bg-[#1C1C1E]' : 'bg-white'}`}>
+          <div className={`px-4 py-5 text-center border-b ${theme === 'dark' ? 'border-[#38383A]/50' : 'border-gray-100'}`}>
+             <button 
+               onClick={() => setPickerConfig({ isOpen: true, dateKey: 'month', field: 'month', options: months, currentValue: months[currentMonthIndex] })} 
+               className="inline-flex items-center justify-center gap-1.5 active:opacity-50 transition-opacity"
+             >
+               <h2 className="text-[22px] font-semibold tracking-tight">{months[currentMonthIndex]}</h2>
+               <ChevronsUpDown size={16} className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} />
+             </button>
+          </div>
 
-        .ios-card {
-            border-radius: 36px;
-            background: #FFFFFF;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.04);
-        }
-
-        .ios-select {
-            -webkit-appearance: none;
-            appearance: none;
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C7C7CC' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M6 9l6 6 6-6'%3e%3c/path%3e%3c/svg%3e");
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 10px;
-        }
-
-        @keyframes reveal {
-            from { opacity: 0; transform: scale(0.98) translateY(10px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        .animate-ios { animation: reveal 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
-
-        .loader-overlay {
-            position: fixed; inset: 0; z-index: 500;
-            background: rgba(255,255,255,0.8); backdrop-filter: blur(12px);
-            display: flex; align-items: center; justify-content: center;
-        }
-
-        .toast-msg {
-            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.85); color: white; padding: 12px 24px;
-            border-radius: 24px; font-size: 13px; font-weight: 600; z-index: 1000;
-            animation: toast-fade 3s forwards;
-        }
-        @keyframes toast-fade {
-            0% { opacity: 0; transform: translate(-50%, 20px); }
-            15% { opacity: 1; transform: translate(-50%, 0); }
-            85% { opacity: 1; transform: translate(-50%, 0); }
-            100% { opacity: 0; transform: translate(-50%, -10px); }
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <!-- Modulo Firebase -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDBdoOrYUZ-oy22g_Is2vw0kpEAaKVviRU",
-            authDomain: "acomodadores-df8a5.firebaseapp.com",
-            projectId: "acomodadores-df8a5",
-            storageBucket: "acomodadores-df8a5.firebasestorage.app",
-            messagingSenderId: "912664676824",
-            appId: "1:912664676824:web:9c832aabc194e85b638aad",
-            measurementId: "G-Q8V3CPCNR4"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        window.fb = { db, auth, doc, setDoc, getDoc, signInAnonymously, onAuthStateChanged };
-        window.dispatchEvent(new Event('firebase-ready'));
-    </script>
-
-    <!-- App React -->
-    <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-
-        const App = () => {
-            const [currentMonthIndex, setCurrentMonthIndex] = useState(2); // Marzo 2026
-            const [schedules, setSchedules] = useState({});
-            const [user, setUser] = useState(null);
-            const [syncing, setSyncing] = useState(true);
-            const [activeWarning, setActiveWarning] = useState(null);
-            const [toast, setToast] = useState(null);
-
-            const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-            const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
-            const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
-            const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
+          <div className="flex flex-col">
+            <div className={`flex px-4 py-2 text-[11px] font-semibold uppercase tracking-widest ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+              <div className="w-16 text-center">Día</div>
+              <div className="flex-1 text-center">Auditorio</div>
+              <div className="flex-1 text-center">Entrada</div>
+            </div>
             
-            // Filtro para Auditorio
-            const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
+            {currentMonthDays.map((day, idx) => {
+              const isLast = idx === currentMonthDays.length - 1;
+              const isDark = theme === 'dark';
+              const textColor = day.isThursday ? (isDark ? "text-white" : "text-black") : "text-[#007AFF]";
+              const rowBg = day.isThursday ? "bg-transparent" : (isDark ? "bg-[#2C2C2E]/40" : "bg-[#F2F2F7]/50");
 
-            // Sincronización Inicial
-            useEffect(() => {
-                const initSync = async () => {
-                    if (!window.fb) return;
-                    try {
-                        const { auth, signInAnonymously, onAuthStateChanged } = window.fb;
-                        await signInAnonymously(auth);
-                        onAuthStateChanged(auth, (u) => {
-                            setUser(u);
-                            if (u) loadData(currentMonthIndex);
-                        });
-                    } catch (e) {
-                        console.error(e);
-                        if (e.code === 'auth/configuration-not-found') {
-                            setActiveWarning(["Error de Configuración:", "Activa el inicio de sesión anónimo en Firebase."]);
-                        }
-                        setSyncing(false);
-                    }
-                };
+              return (
+                <div key={day.fullDate} className={`flex items-center px-4 py-3 ${rowBg} ${!isLast ? (isDark ? 'border-b border-[#38383A]/50' : 'border-b border-gray-100') : ''}`}>
+                  
+                  {/* Columna Fecha */}
+                  <div className="w-16 flex flex-col items-center justify-center">
+                    <span className={`text-[10px] font-bold tracking-widest mb-0.5 ${textColor}`}>{day.short}</span>
+                    <span className={`text-[22px] font-semibold tracking-tight leading-none ${textColor}`}>{day.dayNum}</span>
+                  </div>
+                  
+                  {/* Botón Auditorio */}
+                  <div className="flex-1 px-1.5">
+                    <button 
+                      onClick={() => openPicker(day.fullDate, 'auditorio', day.isThursday)}
+                      className={`w-full flex justify-between items-center px-3 py-2.5 rounded-[12px] text-[13px] font-medium active:scale-95 transition-all ${isDark ? 'bg-[#2C2C2E] text-white active:bg-[#3A3A3C]' : 'bg-[#F2F2F7] text-black active:bg-gray-200'}`}
+                    >
+                      <span className="truncate">{schedules[day.fullDate]?.auditorio || '—'}</span>
+                      <ChevronsUpDown size={14} className="text-gray-400 shrink-0" />
+                    </button>
+                  </div>
+                  
+                  {/* Botón Entrada */}
+                  <div className="flex-1 px-1.5">
+                    <button 
+                      onClick={() => openPicker(day.fullDate, 'entrada', day.isThursday)}
+                      className={`w-full flex justify-between items-center px-3 py-2.5 rounded-[12px] text-[13px] font-medium active:scale-95 transition-all ${isDark ? 'bg-[#2C2C2E] text-white active:bg-[#3A3A3C]' : 'bg-[#F2F2F7] text-black active:bg-gray-200'}`}
+                    >
+                      <span className="truncate">{schedules[day.fullDate]?.entrada || '—'}</span>
+                      <ChevronsUpDown size={14} className="text-gray-400 shrink-0" />
+                    </button>
+                  </div>
 
-                if (window.fb) initSync();
-                else window.addEventListener('firebase-ready', initSync);
-                return () => window.removeEventListener('firebase-ready', initSync);
-            }, [currentMonthIndex]);
-
-            const loadData = async (mIdx) => {
-                setSyncing(true);
-                const { db, getDoc, doc } = window.fb;
-                const docId = `${months[mIdx]}_2026`;
-                try {
-                    const docRef = doc(db, 'artifacts', 'acomodadores-df8a5', 'public', 'data', 'calendarios', docId);
-                    const snap = await getDoc(docRef);
-                    if (snap.exists()) {
-                        setSchedules(prev => ({ ...prev, ...snap.data().schedules }));
-                    }
-                } catch (e) { console.error(e); }
-                setSyncing(false);
-            };
-
-            const saveData = async () => {
-                if (!user) return;
-                setSyncing(true);
-                const { db, setDoc, doc } = window.fb;
-                const docId = `${months[currentMonthIndex]}_2026`;
-                try {
-                    const docRef = doc(db, 'artifacts', 'acomodadores-df8a5', 'public', 'data', 'calendarios', docId);
-                    await setDoc(docRef, {
-                        schedules,
-                        updatedAt: new Date().toISOString()
-                    });
-                    setToast(`Calendario de ${months[currentMonthIndex]} guardado`);
-                    setTimeout(() => setToast(null), 3000);
-                } catch (e) {
-                    setActiveWarning(["Error al guardar. Activa Firestore en modo prueba."]);
-                }
-                setSyncing(false);
-            };
-
-            const currentMonthDays = useMemo(() => {
-                const days = [];
-                const date = new Date(2026, currentMonthIndex, 1);
-                while (date.getMonth() === currentMonthIndex) {
-                    const dw = date.getDay(); 
-                    if (dw === 4 || dw === 6) {
-                        days.push({
-                            dayNum: date.getDate(),
-                            short: dw === 4 ? "JUE" : "SÁB",
-                            fullDate: `2026-${currentMonthIndex + 1}-${date.getDate()}`,
-                            isThursday: dw === 4
-                        });
-                    }
-                    date.setDate(date.getDate() + 1);
-                }
-                return days;
-            }, [currentMonthIndex]);
-
-            const handleSelect = (dateKey, field, val) => {
-                const updated = { ...schedules, [dateKey]: { ...(schedules[dateKey] || {}), [field]: val } };
-                setSchedules(updated);
-                
-                // Validaciones Rápidas
-                const day = updated[dateKey];
-                if (day?.auditorio && day?.entrada) {
-                    if (!keyHolders.includes(day.auditorio) && !keyHolders.includes(day.entrada)) {
-                        setActiveWarning(["Seguridad: Falta alguien con llave."]);
-                    }
-                    if ((day.auditorio === "Atilio" && day.entrada === "Ramón Perales") || (day.auditorio === "Ramón Perales" && day.entrada === "Atilio")) {
-                        setActiveWarning(["Atilio y Ramón Perales no pueden estar juntos."]);
-                    }
-                }
-
-                // Regla José meses seguidos
-                if (val === "José") {
-                    const checkMonth = (idx) => {
-                        if (idx < 0 || idx > 11) return false;
-                        const date = new Date(2026, idx, 1);
-                        while (date.getMonth() === idx) {
-                            const k = `2026-${idx+1}-${date.getDate()}`;
-                            if (updated[k]?.auditorio === "José" || updated[k]?.entrada === "José") return true;
-                            date.setDate(date.getDate() + 1);
-                        }
-                        return false;
-                    };
-                    if (checkMonth(currentMonthIndex - 1) || checkMonth(currentMonthIndex + 1)) {
-                        setActiveWarning(["José no puede estar dos meses seguidos."]);
-                    }
-                }
-            };
-
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [currentMonthIndex, activeWarning, syncing, schedules]);
-
-            return (
-                <div className="max-w-md mx-auto px-5 pt-8 animate-ios">
-                    {activeWarning && (
-                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm">
-                            <div className="bg-white rounded-[28px] shadow-2xl p-6 text-center max-w-[280px] w-full">
-                                <i data-lucide="alert-circle" className="w-10 h-10 text-red-500 mx-auto mb-3"></i>
-                                <h3 className="font-bold mb-2 tracking-tighter">Aviso</h3>
-                                {activeWarning.map((m,i) => <p key={i} className={`text-[11px] font-bold leading-tight mb-1 ${i===0?'text-gray-900':'text-gray-500'}`}>{m}</p>)}
-                                <button onClick={() => setActiveWarning(null)} className="mt-4 w-full py-3 text-blue-600 font-bold border-t active:bg-gray-50 transition-colors">Entendido</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {toast && <div className="toast-msg">{toast}</div>}
-
-                    {syncing && (
-                        <div className="loader-overlay">
-                            <div className="flex flex-col items-center">
-                                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                <p className="mt-4 text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Sincronizando</p>
-                            </div>
-                        </div>
-                    )}
-
-                    <header className="mb-6 flex justify-between items-end px-1">
-                        <div>
-                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">2026</p>
-                            <h1 className="text-3xl font-black tracking-tighter">Acomodadores</h1>
-                        </div>
-                        <button onClick={saveData} disabled={syncing} className="bg-white text-blue-600 px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
-                            <i data-lucide="cloud-upload" className="w-4 h-4"></i> Guardar
-                        </button>
-                    </header>
-
-                    {/* Navegador */}
-                    <div className="bg-gray-200/50 p-1 rounded-2xl mb-6 flex items-center shadow-inner">
-                        <button onClick={() => setCurrentMonthIndex(v => Math.max(0, v-1))} className="p-2 text-gray-400"><i data-lucide="chevron-left"></i></button>
-                        <div className="flex-1 text-center font-bold text-[11px] tracking-widest text-gray-400 uppercase">{months[currentMonthIndex]}</div>
-                        <button onClick={() => setCurrentMonthIndex(v => Math.min(11, v+1))} className="p-2 text-gray-400"><i data-lucide="chevron-right"></i></button>
-                    </div>
-
-                    {/* Llaves */}
-                    <div className="mb-8 px-1">
-                        <div className="flex items-center gap-1.5 mb-2.5 pl-1 text-blue-500">
-                            <i data-lucide="key" className="w-3.5 h-3.5"></i>
-                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Tienen Llave</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            {keyHolders.map(n => <span key={n} className="px-2.5 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-gray-100 text-gray-700">{n}</span>)}
-                        </div>
-                    </div>
-
-                    {/* Planilla */}
-                    <div className="ios-card overflow-hidden pb-4 mb-12">
-                        <div className="pt-8 pb-3 text-center">
-                            <h2 className="text-2xl font-black uppercase italic tracking-tighter">{months[currentMonthIndex]}</h2>
-                            <div className="w-8 h-1 bg-gray-100 mx-auto mt-4 rounded-full"></div>
-                        </div>
-
-                        <div className="px-4">
-                            <table className="w-full border-separate border-spacing-y-1">
-                                <thead>
-                                    <tr className="text-black font-black uppercase tracking-[0.25em] text-[11px]">
-                                        <th className="py-2 text-center">DÍA</th>
-                                        <th className="py-2 text-center">AUDITORIO</th>
-                                        <th className="py-2 text-center">ENTRADA</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {currentMonthDays.map((day) => {
-                                        const accent = day.isThursday ? "#000000" : "var(--ios-teal)";
-                                        const audOpts = day.isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
-                                        const entOpts = day.isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames;
-
-                                        return (
-                                            <tr key={day.fullDate} className={!day.isThursday ? "bg-[#E0F2F1]" : ""}>
-                                                <td className={`py-0.5 pr-1 ${!day.isThursday ? "rounded-l-[22px]" : ""}`}>
-                                                    <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[22px] bg-white border border-gray-100 shadow-sm">
-                                                        <span className="text-[8px] font-black tracking-tighter" style={{ color: accent }}>{day.short}</span>
-                                                        <span className="text-2xl font-black leading-none tracking-tighter" style={{ color: accent }}>{day.dayNum}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-0.5 px-0.5">
-                                                    <select 
-                                                        value={schedules[day.fullDate]?.auditorio || ''} 
-                                                        onChange={(e) => handleSelect(day.fullDate, 'auditorio', e.target.value)} 
-                                                        className="ios-select w-full bg-white/60 font-bold py-3.5 px-4 rounded-[18px] text-[11px] outline-none border border-transparent shadow-sm"
-                                                    >
-                                                        <option value="">—</option>
-                                                        {audOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td className={`py-0.5 px-0.5 ${!day.isThursday ? "rounded-r-[22px]" : ""}`}>
-                                                    <select 
-                                                        value={schedules[day.fullDate]?.entrada || ''} 
-                                                        onChange={(e) => handleSelect(day.fullDate, 'entrada', e.target.value)} 
-                                                        className="ios-select w-full bg-white/60 font-bold py-3.5 px-4 rounded-[18px] text-[11px] outline-none border border-transparent shadow-sm"
-                                                    >
-                                                        <option value="">—</option>
-                                                        {entOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
                 </div>
-            );
-        };
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+      {/* ACTION SHEET INFERIOR (UIContextMenu) */}
+      {pickerConfig.isOpen && (
+        <div className="fixed inset-0 z-[200] flex flex-col justify-end animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setPickerConfig(prev => ({ ...prev, isOpen: false }))}></div>
+          
+          <div className={`relative w-full max-w-[428px] mx-auto rounded-t-[32px] pb-[env(safe-area-inset-bottom,34px)] animate-in slide-in-from-bottom duration-300 shadow-[0_-10px_40px_rgba(0,0,0,0.2)] ${theme === 'dark' ? 'bg-[#1C1C1E]/90 backdrop-blur-2xl' : 'bg-white/90 backdrop-blur-2xl'}`}>
+            
+            {/* Barra de arrastre (Pill) */}
+            <div className="w-full flex justify-center pt-3 pb-1">
+              <div className={`w-10 h-1.5 rounded-full ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+            </div>
+            
+            <div className="max-h-[60vh] overflow-y-auto px-4 py-2 scrollbar-hide">
+              <div className={`rounded-[14px] overflow-hidden ${theme === 'dark' ? 'bg-[#2C2C2E]/80' : 'bg-[#F2F2F7]/80'}`}>
+                {pickerConfig.options.map((opt, idx) => {
+                  const isSelected = (pickerConfig.currentValue === '' && opt === '—') || pickerConfig.currentValue === opt;
+                  return (
+                    <button 
+                      key={opt}
+                      onClick={() => handleSelectFromPicker(opt)}
+                      className={`w-full flex justify-between items-center px-5 py-4 text-[17px] active:bg-black/10 transition-colors ${!isSelected ? (theme === 'dark' ? 'text-white' : 'text-black') : 'text-[#007AFF] font-semibold'} ${idx !== pickerConfig.options.length - 1 ? (theme === 'dark' ? 'border-b border-[#38383A]' : 'border-b border-gray-200/50') : ''}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{opt}</span>
+                        {(pickerConfig.field === 'auditorio' || pickerConfig.field === 'entrada') && keyHolders.includes(opt) && (
+                          <Key size={14} className="text-[#007AFF] opacity-80" />
+                        )}
+                      </div>
+                      {isSelected && <Check size={20} className="text-[#007AFF]" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+    </div>
+  );
+};
+
+export default App;
