@@ -129,9 +129,9 @@
             width: 100%; text-align: left;
             background: var(--bg-input);
             color: var(--text-main);
-            font-weight: 500; padding: 12px 14px;
-            border-radius: 14px; font-size: 13px;
-            min-height: 44px;
+            font-weight: 500; padding: 8px 12px;
+            border-radius: 12px; font-size: 13px;
+            min-height: 38px;
             border: 0.5px solid var(--border-color);
             display: flex; justify-content: space-between; align-items: center;
             transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.15s;
@@ -396,23 +396,23 @@
 
                     {/* Planilla / Contenedor Inset Grouped */}
                     <div className="ios-card overflow-hidden pb-4">
-                        <div className="px-4 py-6 text-center border-b border-[var(--border-color)]">
+                        <div className="px-4 py-3 text-center border-b border-[var(--border-color)]">
                              <button 
                                onClick={() => openPicker(null, 'month', false)} 
                                className="inline-flex items-center justify-center gap-1.5 active:opacity-50 transition-opacity cursor-pointer bg-transparent border-none p-0 m-0"
                              >
-                               <h2 className="text-[22px] font-semibold tracking-tight text-[var(--text-main)] m-0">{months[currentMonthIndex]}</h2>
+                               <h2 className="text-[20px] font-semibold tracking-tight text-[var(--text-main)] m-0">{months[currentMonthIndex]}</h2>
                                <Icon name="chevrons-up-down" className="w-4 h-4 text-[var(--text-muted)]" />
                              </button>
                         </div>
 
-                        <div className="px-4 mt-2">
-                            <table className="w-full border-separate border-spacing-y-2">
+                        <div className="px-4 mt-1">
+                            <table className="w-full border-separate border-spacing-y-1">
                                 <thead>
                                     <tr className="text-[var(--text-main)] font-semibold uppercase tracking-wide text-[11px]">
-                                        <th className="py-2 text-center w-[20%] font-semibold">DÍA</th>
-                                        <th className="py-2 text-center w-[40%] font-semibold">AUDITORIO</th>
-                                        <th className="py-2 text-center w-[40%] font-semibold">ENTRADA</th>
+                                        <th className="py-1 text-center w-[20%] font-semibold">DÍA</th>
+                                        <th className="py-1 text-center w-[40%] font-semibold">AUDITORIO</th>
+                                        <th className="py-1 text-center w-[40%] font-semibold">ENTRADA</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -421,14 +421,14 @@
                                         const rowBg = day.isThursday ? "transparent" : "var(--bg-saturday)";
 
                                         return (
-                                            <tr key={day.fullDate} style={{ backgroundColor: rowBg, borderRadius: '16px' }}>
-                                                <td className={`py-1 pr-1 ${!day.isThursday ? "rounded-l-[16px]" : ""}`}>
-                                                    <div className="flex flex-col items-center justify-center min-w-[62px] py-1.5 rounded-[12px] bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
+                                            <tr key={day.fullDate} style={{ backgroundColor: rowBg, borderRadius: '12px' }}>
+                                                <td className={`py-0.5 pr-1 ${!day.isThursday ? "rounded-l-[12px]" : ""}`}>
+                                                    <div className="flex flex-col items-center justify-center min-w-[56px] py-1 rounded-[10px] bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
                                                         <span className="text-[9px] font-bold tracking-wide" style={{ color: accent }}>{day.short}</span>
-                                                        <span className="text-[22px] font-semibold leading-none tracking-tight" style={{ color: accent, marginTop: '2px' }}>{day.dayNum}</span>
+                                                        <span className="text-[18px] font-semibold leading-none tracking-tight" style={{ color: accent, marginTop: '2px' }}>{day.dayNum}</span>
                                                     </div>
                                                 </td>
-                                                <td className="py-1 px-1">
+                                                <td className="py-0.5 px-0.5">
                                                     <button 
                                                         onClick={() => openPicker(day.fullDate, 'auditorio', day.isThursday)}
                                                         className="ios-cell-button"
@@ -437,7 +437,7 @@
                                                         <Icon name="chevrons-up-down" className="w-3.5 h-3.5 text-[var(--text-muted)] opacity-50 shrink-0" />
                                                     </button>
                                                 </td>
-                                                <td className={`py-1 px-1 ${!day.isThursday ? "rounded-r-[16px]" : ""}`}>
+                                                <td className={`py-0.5 px-0.5 ${!day.isThursday ? "rounded-r-[12px]" : ""}`}>
                                                     <button 
                                                         onClick={() => openPicker(day.fullDate, 'entrada', day.isThursday)}
                                                         className="ios-cell-button"
