@@ -225,9 +225,10 @@
             const schedulesRef = useRef(schedules);
 
             const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-            const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo"];
+            const keyHolders = ["Esteban", "Jorge", "Ramón S", "Miguel", "Pablo", "Enzo"];
+            // Lista de usuarios que solo pueden estar 1 vez al mes. "José" tiene la regla extra de no estar meses seguidos.
             const restrictedUsers = ["Atilio", "José", "Ramón Perales"];
-            const allNames = ["Atilio", "Diego", "Esteban", "Jeremias", "Jorge", "José", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
+            const allNames = ["Atilio", "Diego", "Enzo", "Esteban", "Jeremias", "Jorge", "José", "Leonardo", "Luis", "Miguel", "Pablo", "Ramón Perales", "Ramón S"].sort();
             const baseAuditorioOptions = allNames.filter(n => !["Atilio", "Ramón Perales", "José"].includes(n));
 
             // Detector de tema nativo
@@ -317,14 +318,59 @@
                 return days;
             }, [currentMonthIndex]);
 
+            // Lógica para filtrar las opciones disponibles basadas en las reglas
+            const getAvailableOptions = (dateKey, field, isThursday) => {
+                let baseOptions = [];
+                
+                // Determina la lista base según el rol y el día (Luis no puede los Jueves)
+                if (field === 'auditorio') {
+                    baseOptions = isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions;
+                } else {
+                    baseOptions = isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames;
+                }
+
+                // Identifica a los usuarios restringidos (solo 1 vez al mes) que YA están asignados en OTROS días de este mes
+                const assignedRestrictedUsers = new Set();
+                
+                Object.entries(schedules).forEach(([scheduleDateKey, scheduleData]) => {
+                    // Solo revisamos los otros días (no el día actual que estamos editando)
+                    if (scheduleDateKey !== dateKey) {
+                        if (restrictedUsers.includes(scheduleData.auditorio)) {
+                            assignedRestrictedUsers.add(scheduleData.auditorio);
+                        }
+                        if (restrictedUsers.includes(scheduleData.entrada)) {
+                            assignedRestrictedUsers.add(scheduleData.entrada);
+                        }
+                    }
+                });
+
+                // Filtra las opciones: Si el usuario es restringido y YA fue asignado en otro día, lo quitamos de la lista
+                const filteredOptions = baseOptions.filter(name => {
+                    // Regla de Atilio y Ramón Perales para el mismo día (Incompatibilidad)
+                    // Si estoy eligiendo 'auditorio' y en 'entrada' ya está Ramón, Atilio no puede estar disponible (y viceversa)
+                    const otherField = field === 'auditorio' ? 'entrada' : 'auditorio';
+                    const currentOtherFieldValue = schedules[dateKey]?.[otherField];
+
+                    if (name === "Atilio" && currentOtherFieldValue === "Ramón Perales") return false;
+                    if (name === "Ramón Perales" && currentOtherFieldValue === "Atilio") return false;
+
+                    // Si es un usuario restringido y ya está asignado en otro día, se oculta
+                    if (restrictedUsers.includes(name) && assignedRestrictedUsers.has(name)) {
+                        return false;
+                    }
+                    
+                    return true;
+                });
+
+                return ['—', ...filteredOptions];
+            };
+
             const openPicker = (dateKey, field, isThursday) => {
                 let options = [];
                 if (field === 'month') {
                     options = months;
-                } else if (field === 'auditorio') {
-                    options = ['—', ...(isThursday ? baseAuditorioOptions.filter(n => n !== "Luis") : baseAuditorioOptions)];
                 } else {
-                    options = ['—', ...(isThursday ? allNames.filter(n => !["José", "Luis"].includes(n)) : allNames)];
+                    options = getAvailableOptions(dateKey, field, isThursday);
                 }
 
                 setPickerConfig({
@@ -350,23 +396,17 @@
                 setSchedules(updated);
                 setPickerConfig(prev => ({ ...prev, isOpen: false }));
                 
-                // Validación de Reglas
+                // Validación de Reglas (Alertas)
                 const msgs = [];
                 const aud = updated[dateKey].auditorio;
                 const ent = updated[dateKey].entrada;
 
-                if (aud && ent && !keyHolders.includes(aud) && !keyHolders.includes(ent)) msgs.push("Falta personal con llave.");
-                if ((aud === "Atilio" && ent === "Ramón Perales") || (aud === "Ramón Perales" && ent === "Atilio")) msgs.push("Atilio y R. Perales no pueden estar juntos.");
+                // Verificación de llaves
+                if (aud && ent && !keyHolders.includes(aud) && !keyHolders.includes(ent)) {
+                    msgs.push("Aviso de Seguridad: Falta personal con llave en el salón.");
+                }
                 
-                restrictedUsers.forEach(u => {
-                    let count = 0;
-                    currentMonthDays.forEach(d => {
-                        const data = updated[d.fullDate];
-                        if (data?.auditorio === u || data?.entrada === u) count++;
-                    });
-                    if (count > 1 && (aud === u || ent === u)) msgs.push(`${u} no puede estar dos veces en el mes.`);
-                });
-                
+                // Verificación de meses seguidos para José
                 if (aud === "José" || ent === "José") {
                     const checkMonth = (idx) => {
                         if (idx < 0 || idx > 11) return false;
@@ -378,8 +418,12 @@
                         }
                         return false;
                     };
-                    if (checkMonth(currentMonthIndex - 1) || checkMonth(currentMonthIndex + 1)) msgs.push("José no puede estar dos meses seguidos.");
+                    if (checkMonth(currentMonthIndex - 1) || checkMonth(currentMonthIndex + 1)) {
+                        msgs.push("Recuerda: José no puede estar dos meses seguidos.");
+                    }
                 }
+
+                // Mostrar la primera advertencia si la hay
                 if (msgs.length > 0) setActiveWarning([msgs[0]]);
             };
 
@@ -387,9 +431,9 @@
                 <div className="max-w-[428px] mx-auto px-5 pt-8 pb-12 animate-fade">
                     
                     {/* Header iOS Minimalista */}
-                    <div className="flex justify-between items-center mb-8">
-                        <h1 className="ios-large-title">Acomodadores</h1>
-                        <button onClick={toggleTheme} className="p-2 rounded-full bg-[var(--bg-secondary)] text-[var(--text-main)] active:scale-90 transition-transform cursor-pointer">
+                    <div className="relative flex justify-center items-center mb-8">
+                        <h1 className="ios-large-title text-center">Acomodadores</h1>
+                        <button onClick={toggleTheme} className="absolute right-0 p-2 rounded-full bg-[var(--bg-secondary)] text-[var(--text-main)] active:scale-90 transition-transform cursor-pointer">
                             <Icon name={theme === 'dark' ? 'sun' : 'moon'} className="w-5 h-5" />
                         </button>
                     </div>
